@@ -1,0 +1,191 @@
+const fs = require('fs');
+const authenticate = require('../../authenticate.js');
+var auth;
+var course;
+var cName;
+var cID;
+var token;
+var classroom;
+var tempAnnouncement;
+var latestAnnouncement;
+var tempAssignment;
+var latestAssignment;
+
+function resetter(guild) {
+    return new Promise((resolve, reject) => {
+        const { authReady, courseReady, courseName, courseID, streamChannelID, userToken } = JSON.parse(fs.readFileSync(`./guilds/${guild.id}/config.json`));
+        auth = authReady;
+        course = courseReady;
+        cName = courseName;
+        cID = courseID;
+        token = userToken;
+        var channel = guild.channels.cache.find(channel => channel.id === streamChannelID);
+        tempAnnouncement = '';
+        tempAssignment = '';
+        resolve(channel);
+    });
+}
+
+
+async function monitor(channel) {
+    await createAuth();
+    while (true) {
+        if (auth && course) {
+            try {
+                latestAnnouncement = await getAnnouncement();
+                if (tempAnnouncement != latestAnnouncement) {
+                    sendAnnouncement(channel, latestAnnouncement);
+                    tempAnnouncement = latestAnnouncement;
+                } else {
+                    await sleep(10000);
+                }
+
+                latestAssignment = await getAssignment();
+                if (tempAssignment != latestAssignment) {
+                    sendAssignment(channel, latestAssignment);
+                    tempAssignment = latestAssignment;
+                } else {
+                    await sleep(10000);
+                }
+
+            } catch (err) {
+                console.log(err);
+            }
+        }
+    }
+}
+
+function createAuth() {
+    return new Promise((resolve, reject) => {
+       classroom = authenticate.execute(token);
+       resolve();
+    });
+}
+
+function getAnnouncement() {
+    return new Promise( (resolve, reject) => {
+        classroom.courses.announcements.list({
+            courseId: cID,
+            pageSize: 1
+        }, (err, res) => {
+            if (err) {
+                console.log(err);
+            }
+            resolve(res.data.announcements[0].id);
+        });
+    });
+}
+
+function sendAnnouncement(channel, id) {
+    classroom.courses.announcements.get({
+        courseId: cID,
+        id: id
+    }, (err, res) => {
+        if (err) {
+            console.log(err);
+        }
+        var announcement = res.data;
+		let announcementTime = announcement.creationTime;
+		let announcementText = announcement.text;
+		let announcementMaterials = announcement.materials;
+        announce(channel, announcementTime, announcementText, cName , materials(announcementMaterials));
+    });
+}
+
+function announce(channel, time, text, name, materials) {
+    let announcementEmbed = {
+        color: '7289DA',
+        description: `__**Text Found:**__\n\n ${text}` + materials,
+        author: {
+            name: "Google Classroom v1",
+        },
+        title: name,
+        footer: {
+            text: time
+        }
+    }
+    channel.send({ content: "**New Announcement Found**", embed: announcementEmbed }).catch(console.error);
+}
+
+function materials(materials) {
+	var descAdd = "\n __**Attachments:**__\n"
+	if (materials === undefined) {
+		return descAdd = "";
+	}
+	materials.forEach(m => {
+		if (m.link) {
+			descAdd += `| [${m.link.title}](${m.link.url}) | \n`;
+		} else if (m.driveFile) {
+			descAdd += `| [${m.driveFile.driveFile.title}](${m.driveFile.driveFile.alternateLink}) | \n`;
+		} else if (m.form) {
+			descAdd += `| [${m.form.title}](${m.form.formUrl}) | \n`;
+		} else if (m.youtubeVideo) {
+			descAdd += `| [${m.youtubeVideo.title}](${m.youtubeVideo.alternateLink}) | \n`;
+		}
+	});
+	return descAdd;
+}
+
+function sleep(ms){
+    return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+function getAssignment() {
+    return new Promise((resolve, reject) => {
+        classroom.courses.courseWork.list({
+            courseId: cID,
+            pageSize: 1
+        }, (err, res) => {
+            if (err) {
+                console.log(err);
+            }
+            resolve(res.data.courseWork[0].id);
+        });
+    });
+}
+
+function sendAssignment(channel, id) {
+    classroom.courses.courseWork.get({
+		courseId: cID,
+		id: id
+	}, (err, res) => {
+		if (err) {
+		    console.log(err);
+        }
+        let courseWork = res.data;
+        let courseWorkLink = courseWork.alternateLink;
+        let courseWorkTime = courseWork.creationTime;
+        let courseWorkText = courseWork.description;
+        let courseWorkTitle = courseWork.title;
+        let courseWorkMaterials = courseWork.materials;
+        
+		assign(channel, courseWorkTime, courseWorkText, cName, courseWorkTitle, courseWorkLink, materials(courseWorkMaterials));
+	});
+}
+
+function assign(channel, time, text, name, title, link, materials) {
+    let assignmentEmbed = {
+        color: '7289DA',
+        author: {
+            name: "Google Classroom v1",
+        },
+        title: `${name} - ${title}`,
+        url: link,
+        description: `**Course Work**\n__**Text Found:**__\n\n${text}\n` + materials,
+        
+        footer: {
+            text: time
+        }
+    }
+    channel.send({ content: "**New Assingment Found**", embed: assignmentEmbed });
+}
+
+
+
+module.exports = {
+    name: "monitor",
+    async execute(guild) {
+        await sleep(3000);
+        resetter(guild).then(channel => monitor(channel));
+    }
+}

@@ -1,0 +1,12 @@
+{
+    "authReady": true,
+    "classReady": true,
+    "courseName": "sampleCourseName",
+    "courseID": "sampleCourseID",
+    "streamChannelID": "sampleStreamChannelID",
+    "userToken": {
+        "access_token": "sampleAccessToken",
+        "refresh_token": "sampleAccessToken",
+        "scope": "sampleGoogleClassroomAPISCope"
+    }
+}
